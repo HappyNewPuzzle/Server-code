@@ -1,0 +1,5 @@
+﻿  소스.cpp
+c:\users\happy\onedrive\문서\visual studio 2015\projects\프로그래머스 코딩 연습\1 vs 1 chatting client\1 vs 1 chatting client\소스.cpp(42): warning C4101: 'clientaddr' :참조되지 않은 지역 변수입니다.
+c:\users\happy\onedrive\문서\visual studio 2015\projects\프로그래머스 코딩 연습\1 vs 1 chatting client\1 vs 1 chatting client\소스.cpp(43): warning C4101: 'addrlen' :참조되지 않은 지역 변수입니다.
+  1 vs 1 chatting client.vcxproj -> C:\Users\happy\OneDrive\문서\Visual Studio 2015\Projects\프로그래머스 코딩 연습\1 vs 1 chatting client\Debug\1 vs 1 chatting client.exe
+  1 vs 1 chatting client.vcxproj -> C:\Users\happy\OneDrive\문서\Visual Studio 2015\Projects\프로그래머스 코딩 연습\1 vs 1 chatting client\Debug\1 vs 1 chatting client.pdb (Full PDB)
