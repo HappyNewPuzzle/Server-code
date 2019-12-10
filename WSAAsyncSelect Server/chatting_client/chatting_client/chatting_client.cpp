@@ -3,11 +3,15 @@
 
 #include "stdafx.h"
 #include "chatting_client.h"
-
+#include "Protocal.h"
 #define MAX_LOADSTRING 100
-#define ID_EDIT 100
-#define ID_LISTBOX 101
-#define ID_BUTTON 102
+
+#define ID_LOGIN_ID_EDIT 200
+#define ID_LOGIN_PASSWORD_EDIT 201
+#define ID_LOGIN_BUTTON 202
+#define ID_CHAT_WRITE_EDIT 203
+#define ID_CHAT_READ_LISTBOX 204
+#define ID_CHAT_SEND_BUTTON 205
 /////////////// server data //////////////////
 #define SERVERIP	"127.0.0.1"
 #define SERVERPORT	9000
@@ -20,11 +24,16 @@
 HINSTANCE hInst;                                // 현재 인스턴스입니다.
 WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
 WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름입니다.
-HWND hEdit;
-HWND hEdit2;
-HWND hEdit3;
-WCHAR str[BUFSIZE];
-SOCKET sock;
+
+HWND hLoginIdEdit;
+HWND hLoginPasswordEdit;
+HWND hLoginButton;
+HWND hChatWriteEdit;
+HWND hChatReadListbox;
+HWND hChatSendButton;
+
+WCHAR g_str[BUFSIZE];
+SOCKET g_serverSock;
 // 이 코드 모듈에 들어 있는 함수의 정방향 선언입니다.
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -33,6 +42,7 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 void				ProcessSocketMessage(HWND, UINT, WPARAM, LPARAM);
 ////////////////소켓  함수////////////////////
 void InitClientServer(HWND hWnd);
+void SendFixedSize(SOCKET sock);
 //////////////error 출력 함수/////////////////
 void DisplayText(LPWSTR fmt, ...);
 void err_quit(LPWSTR msg);
@@ -121,7 +131,7 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
    hInst = hInstance; // 인스턴스 핸들을 전역 변수에 저장합니다.
 
    HWND hWnd = CreateWindowW(szWindowClass, szTitle, WS_OVERLAPPEDWINDOW,
-      CW_USEDEFAULT, 0, 500, 500, nullptr, nullptr, hInstance, nullptr);
+      200, 200, 500, 460, nullptr, nullptr, hInstance, nullptr);
 
    if (!hWnd)
    {
@@ -144,31 +154,29 @@ BOOL InitInstance(HINSTANCE hInstance, int nCmdShow)
 //  WM_DESTROY  - 종료 메시지를 게시하고 반환합니다.
 //
 //
+HWND hWndNew;
 LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
+	HDC memdc;
 	int retval;
-	int size;
+	static HBITMAP hBitmap;
     switch (message)
     {
 	case WM_CREATE:
-		hEdit = CreateWindowW(L"edit", NULL,
-			WS_CHILD		| WS_VISIBLE	 | WS_BORDER ,
-		//	WS_VSCROLL		|									//수직 스크롤 생성
-		//	ES_AUTOHSCROLL	| ES_AUTOVSCROLL | ES_MULTILINE		//Enter 키 사용시
-			5, 385, 425, 50, hWnd, (HMENU)ID_EDIT, hInst, NULL);
-		hEdit2 = CreateWindowW(L"listbox", NULL,
-			WS_CHILD	| WS_VISIBLE | WS_BORDER |
-			WS_VSCROLL  |
-			ES_READONLY,
-			5, 5, 475, 380, hWnd, (HMENU)ID_LISTBOX, hInst, NULL);
-		hEdit3 = CreateWindowW(L"button", L"보내기", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
-			430, 385, 50, 50, hWnd, (HMENU)ID_BUTTON, hInst, NULL);
+		hBitmap = (HBITMAP)LoadBitmap(((LPCREATESTRUCT)lParam)->hInstance, MAKEINTRESOURCE(IDB_BITMAP1));
+		hLoginIdEdit = CreateWindowW(L"edit", NULL,
+			WS_CHILD | WS_VISIBLE | WS_BORDER,
+			180, 340, 100, 25, hWnd, (HMENU)ID_LOGIN_ID_EDIT, hInst, NULL);
+		hLoginPasswordEdit = CreateWindowW(L"edit", NULL,
+			WS_CHILD | WS_VISIBLE | WS_BORDER,
+			180, 370, 100, 25, hWnd, (HMENU)ID_LOGIN_ID_EDIT, hInst, NULL);
+		hLoginButton = CreateWindowW(L"button", L"로그인" , WS_CHILD | WS_VISIBLE | WS_BORDER,
+			290, 340, 50, 55, hWnd, (HMENU)ID_LOGIN_BUTTON, hInst, NULL);
 
-		InitClientServer(hWnd);
 		return 0;
 		//일단써놈
 	case WM_SETFOCUS:
-		SetFocus(hEdit);
+		SetFocus(hChatWriteEdit);
 		return 0;
 	case WM_SOCKET:
 		ProcessSocketMessage(hWnd, message, wParam, lParam);
@@ -179,38 +187,29 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
             // 메뉴 선택을 구문 분석합니다.
             switch (wmId)
             {
-				case ID_BUTTON:
-					GetWindowText(hEdit, str, BUFSIZE);
-					size = (lstrlen(str)+1)*sizeof(WCHAR);
-					DisplayText(L"%d", size);
-					retval = send(sock, (char*)&size, sizeof(int), 0);
-					if (retval == SOCKET_ERROR)
-					{
-						err_display(L"send()");
-						break;
-					}
-					retval = send(sock, (char*)str, size , 0);
-					if (retval == SOCKET_ERROR)
-					{
-						err_display(L"send()");
-						break;
-					}
+			case ID_LOGIN_BUTTON:
+				InvalidateRect(hWnd,NULL,TRUE);
+				InitClientServer(hWnd);
+				DestroyWindow(hLoginIdEdit);
+				DestroyWindow(hLoginPasswordEdit);
+				DestroyWindow(hLoginButton);				
+				MoveWindow(hWnd, 200, 200, 500, 500, FALSE);
+				hChatWriteEdit = CreateWindowW(L"edit", NULL,
+					WS_CHILD | WS_VISIBLE | WS_BORDER,
+					//	WS_VSCROLL		|									//수직 스크롤 생성
+					//	ES_AUTOHSCROLL	| ES_AUTOVSCROLL | ES_MULTILINE		//Enter 키 사용시
+					5, 385, 425, 50, hWnd, (HMENU)ID_CHAT_WRITE_EDIT, hInst, NULL);
+				hChatReadListbox = CreateWindowW(L"listbox", NULL,
+					WS_CHILD | WS_VISIBLE | WS_BORDER |
+					WS_VSCROLL |
+					ES_READONLY,
+					5, 5, 475, 380, hWnd, (HMENU)ID_CHAT_READ_LISTBOX, hInst, NULL);
+				hChatSendButton = CreateWindowW(L"button", L"보내기", WS_CHILD | WS_VISIBLE | BS_PUSHBUTTON,
+					430, 385, 50, 50, hWnd, (HMENU)ID_CHAT_SEND_BUTTON, hInst, NULL);
+				break;
+				case ID_CHAT_SEND_BUTTON:
+					SendFixedSize(g_serverSock);
 					break;
-				//case ID_EDIT:
-				//	switch (HIWORD(wParam)) 
-				//	{
-				//		case EN_CHANGE:
-				//			GetWindowText(hEdit, str, 6);
-				//			//GetDlgItemText(hWnd, ID_EDIT, str, 6);
-				//			retval = send(sock, (char*)str, 12, 0);
-				//			if (retval == SOCKET_ERROR)
-				//			{
-				//				err_display(L"send()");
-				//				break;
-				//			}
-				//			//SetWindowText(hWnd, str);
-				//	}
-				//	break;
 				case IDM_ABOUT:
 					DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
 					break;
@@ -224,21 +223,27 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
         break;
     case WM_PAINT:
         {
-            PAINTSTRUCT ps;
-            HDC hdc = BeginPaint(hWnd, &ps);
-            // TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다.
-            EndPaint(hWnd, &ps);
+		PAINTSTRUCT ps;		
+				HDC hdc = BeginPaint(hWnd, &ps);
+				// TODO: 여기에 hdc를 사용하는 그리기 코드를 추가합니다.
+				memdc = CreateCompatibleDC(hdc);
+				SelectObject(memdc, hBitmap);
+				BitBlt(hdc, 0, 0, 480, 411, memdc, 0, 0, SRCCOPY);
+				DeleteDC(memdc);
+				DeleteObject(hBitmap);
+				EndPaint(hWnd, &ps);	
         }
         break;
-	//윈도우창 크기 고정하는 코드
-	case WM_GETMINMAXINFO:	//윈도우 크기나 위치 바꾸려고 할 때 발생하는 메시지
-		((MINMAXINFO*)lParam)->ptMaxTrackSize.x = 500;
-		((MINMAXINFO*)lParam)->ptMaxTrackSize.y = 500;
-		((MINMAXINFO*)lParam)->ptMinTrackSize.x = 500;
-		((MINMAXINFO*)lParam)->ptMinTrackSize.y = 500;
-		return FALSE;
+	////윈도우창 크기 고정하는 코드
+	//case WM_GETMINMAXINFO:	//윈도우 크기나 위치 바꾸려고 할 때 발생하는 메시지
+	//	((MINMAXINFO*)lParam)->ptMaxTrackSize.x = 500;
+	//	((MINMAXINFO*)lParam)->ptMaxTrackSize.y = 500;
+	//	((MINMAXINFO*)lParam)->ptMinTrackSize.x = 500;
+	//	((MINMAXINFO*)lParam)->ptMinTrackSize.y = 500;
+	//	return FALSE;
     case WM_DESTROY:
         PostQuitMessage(0);
+		DeleteObject(hBitmap);
         break;
     default:
         return DefWindowProc(hWnd, message, wParam, lParam);
@@ -275,9 +280,9 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 // lParam : 하위 16비트 -> 발생한 이벤트 상위 16비트 -> 오류코드
 void ProcessSocketMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	SOCKET client_sock;
-	SOCKADDR_IN clientaddr;
-	int addrlen, retval;
+	SOCKET clientSock;
+	SOCKADDR_IN clientAddr;
+	int addrLen, retval;
 	if (WSAGETSELECTERROR(lParam))
 	{
 		err_display(WSAGETSELECTERROR(lParam));
@@ -292,19 +297,19 @@ void ProcessSocketMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 		{
 			err_display(L"WSAAsyncSelect(), FD_CONNECT");
 		}
-		sock = wParam;
+		g_serverSock = wParam;
 		break;
 	case FD_READ:
-		retval = recv(wParam, (char*)str, BUFSIZE, 0);
+		retval = recv(wParam, (char*)g_str, BUFSIZE, 0);
 		if (retval == SOCKET_ERROR)
 		{
 			err_display(L"recv()");
 			return;
 		}
-		addrlen = sizeof(clientaddr);
-		getpeername(wParam, (SOCKADDR*)&clientaddr, &addrlen);
+		addrLen = sizeof(clientAddr);
+		getpeername(wParam, (SOCKADDR*)&clientAddr, &addrLen);
 		DisplayText(L"[TCP /%S : %d] %s",
-			inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port), str);
+			inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), g_str);
 		break;
 	case FD_WRITE:
 		DisplayText(L"FD_WRITE 발생");
@@ -317,10 +322,10 @@ void InitClientServer(HWND hWnd)
 	WSADATA wsa;
 	if (WSAStartup(MAKEWORD(2, 2), &wsa) != 0) return;
 	//socket 생성
-	SOCKET client_sock = socket(AF_INET, SOCK_STREAM, 0);
-	if (client_sock == INVALID_SOCKET) err_quit(L"sock()");
+	SOCKET clientSock = socket(AF_INET, SOCK_STREAM, 0);
+	if (clientSock == INVALID_SOCKET) err_quit(L"sock()");
 	//WSAAsyncSelect()로 connect 등록
-	if (WSAAsyncSelect(client_sock, hWnd, WM_SOCKET, FD_CONNECT | FD_CLOSE) == SOCKET_ERROR) err_quit(L"WSAAsyncSelect()");
+	if (WSAAsyncSelect(clientSock, hWnd, WM_SOCKET, FD_CONNECT | FD_CLOSE) == SOCKET_ERROR) err_quit(L"WSAAsyncSelect()");
 
 	int retval;
 	SOCKADDR_IN serveraddr;
@@ -328,11 +333,32 @@ void InitClientServer(HWND hWnd)
 	serveraddr.sin_family = AF_INET;
 	serveraddr.sin_addr.s_addr = inet_addr(SERVERIP);
 	serveraddr.sin_port = htons(SERVERPORT);
-	retval = connect(client_sock, (SOCKADDR *)&serveraddr, sizeof(serveraddr));
+	retval = connect(clientSock, (SOCKADDR *)&serveraddr, sizeof(serveraddr));
 	DisplayText(L"서버 연결중...!");
 }
 
+void SendFixedSize(SOCKET sock)
+{
+	int retval;
+	int strSize;
+	
+	GetWindowText(hChatWriteEdit, g_str, BUFSIZE);
+	strSize = (lstrlen(g_str) + 1) * sizeof(WCHAR);
+	DisplayText(L"%d", strSize);
+	retval = send(sock, (char*)&strSize, sizeof(int), 0);
+	if (retval == SOCKET_ERROR)
+	{
+		err_display(L"send()");
+		return;
+	}
+	retval = send(sock, (char*)g_str, strSize, 0);
+	if (retval == SOCKET_ERROR)
+	{
+		err_display(L"send()");
+		return;
+	}
 
+}
 void DisplayText(LPWSTR fmt, ...)
 {
 	va_list arg;
@@ -341,10 +367,10 @@ void DisplayText(LPWSTR fmt, ...)
 	WCHAR cbuf[BUFSIZE + 256];
 	vswprintf(cbuf, BUFSIZE + 256, fmt, arg);
 
-	/*int nLength = GetWindowTextLength(hEdit);
-	SendMessage(hEdit, EM_SETSEL, nLength, nLength);
-	SendMessage(hEdit, EM_REPLACESEL, FALSE, (LPARAM)cbuf);*/
-	SendMessage(hEdit2, LB_ADDSTRING, 0, (LPARAM)cbuf);
+	/*int nLength = GetWindowTextLength(hChatWriteEdit);
+	SendMessage(hChatWriteEdit, EM_SETSEL, nLength, nLength);
+	SendMessage(hChatWriteEdit, EM_REPLACESEL, FALSE, (LPARAM)cbuf);*/
+	SendMessage(hChatReadListbox, LB_ADDSTRING, 0, (LPARAM)cbuf);
 	
 	va_end(arg);
 }

@@ -30,12 +30,18 @@
     <ClInclude Include="chatting_client.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="Protocal.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="chatting_client.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Protocal.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>
@@ -49,6 +55,9 @@
       <Filter>리소스 파일</Filter>
     </Image>
     <Image Include="chatting_client.ico">
+      <Filter>리소스 파일</Filter>
+    </Image>
+    <Image Include="피츄.bmp">
       <Filter>리소스 파일</Filter>
     </Image>
   </ItemGroup>

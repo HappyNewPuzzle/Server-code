@@ -30,12 +30,18 @@
     <ClInclude Include="WSAAsyncSelect_Server.h">
       <Filter>헤더 파일</Filter>
     </ClInclude>
+    <ClInclude Include="Protocal.h">
+      <Filter>헤더 파일</Filter>
+    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="stdafx.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
     <ClCompile Include="WSAAsyncSelect_Server.cpp">
+      <Filter>소스 파일</Filter>
+    </ClCompile>
+    <ClCompile Include="Protocal.cpp">
       <Filter>소스 파일</Filter>
     </ClCompile>
   </ItemGroup>

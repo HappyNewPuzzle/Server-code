@@ -3,7 +3,7 @@
 
 #include "stdafx.h"
 #include "WSAAsyncSelect_Server.h"
-
+#include "Protocal.h"
 #define MAX_LOADSTRING 100
 /////////////// server data //////////////////
 #define SERVERPORT 9000
@@ -11,27 +11,17 @@
 #define WM_SOCKET (WM_USER+1)
 /////////////////////////////////////////////
 
-///////////// sock 관리 구조체 ///////////////
-struct SOCKETINFO
-{
-	SOCKET		sock;
-	WCHAR		buf[BUFSIZE + 1];
-	int			recvbytes;
-	int			sendbytes;
-	BOOL		recvdelayed;
-	SOCKETINFO *next;
 
-};
-/////////////////////////////////////////////
-SOCKETINFO *SocketInfoList;
-SOCKET SockArr[10];
-int SockCount = 0;
+SOCKET g_sockArray[10];
+int g_sockArraySize = 0;
 // 전역 변수:
 HINSTANCE hInst;                                // 현재 인스턴스입니다.
 WCHAR szTitle[MAX_LOADSTRING];                  // 제목 표시줄 텍스트입니다.
 WCHAR szWindowClass[MAX_LOADSTRING];            // 기본 창 클래스 이름입니다.
 HWND hEdit;
-int recive = 0;
+int g_recive = 0;
+int g_strSize = 0;
+WCHAR g_str[BUFSIZE];
 // 이 코드 모듈에 들어 있는 함수의 정방향 선언입니다.
 ATOM                MyRegisterClass(HINSTANCE hInstance);
 BOOL                InitInstance(HINSTANCE, int);
@@ -39,18 +29,13 @@ LRESULT CALLBACK    WndProc(HWND, UINT, WPARAM, LPARAM);
 INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 void				ProcessSocketMessage(HWND, UINT, WPARAM, LPARAM);
 void				InitServer(HWND hWnd);
-///////////// sock 관리 함수 //////////////////
-BOOL AddSocketInfo(SOCKET sock);
-SOCKETINFO *GetSocketInfo(SOCKET sock);
-void RemoveSocketInfo(SOCKET sock);
 //////////////error 출력 함수/////////////////
 void DisplayText(LPWSTR fmt, ...);
 void err_quit(LPWSTR msg);
 void err_display(LPWSTR msg);
 void err_display(int errcode);
 /////////////////////////////////////////////
-char * ConvertWCtoC(wchar_t* str);
-wchar_t* ConverCtoWC(char* str);
+
 
 //
 int APIENTRY wWinMain(_In_ HINSTANCE hInstance,
@@ -234,108 +219,88 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
     }
     return (INT_PTR)FALSE;
 }
-int re_size;
+
 void ProcessSocketMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	SOCKETINFO *ptr;
-	SOCKET client_sock;
-	SOCKADDR_IN clientaddr;
-	int addrlen, retval;
+	SOCKET clientSock;
+	SOCKADDR_IN clientAddr;
+	int addrLen, retval;
 
 
 	if (WSAGETSELECTERROR(lParam))
 	{
 		err_display(WSAGETSELECTERROR(lParam));
-		RemoveSocketInfo(wParam);
 		return;
 	}
 
 	switch (WSAGETSELECTEVENT(lParam))
 	{
-		case FD_ACCEPT:
-			addrlen = sizeof(clientaddr);
-			client_sock = accept(wParam, (SOCKADDR*)&clientaddr, &addrlen);
-			if (client_sock == INVALID_SOCKET)
+	case FD_ACCEPT:
+		addrLen = sizeof(clientAddr);
+		clientSock = accept(wParam, (SOCKADDR*)&clientAddr, &addrLen);
+		if (clientSock == INVALID_SOCKET)
+		{
+			err_display(L"accpt()");
+			return;
+		}
+		DisplayText(L"[TCP 서버] : Client 접속 \r\n IP 주소 : %S, 포트 번호 : %d\r\n",
+			inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
+		if (WSAAsyncSelect(clientSock, hWnd, WM_SOCKET, FD_READ | FD_WRITE | FD_CLOSE) == SOCKET_ERROR)
+		{
+			err_display(L"WSAAsyncSelect(), clientSock");
+		}
+		g_sockArray[g_sockArraySize++] = clientSock;
+		break;
+	case FD_READ:
+		//데이터 받기
+		if (g_recive == 0)
+		{
+			DisplayText(L"FD_READ g_strSize \r\n");
+			g_recive = recv(wParam, (char*)&g_strSize, sizeof(int), 0);
+			if (g_recive == SOCKET_ERROR)
 			{
-				err_display(L"accpt()");
+				err_display(L"recv()");
 				return;
 			}
-			//mbstowcs(ipaddr, inet_ntoa(clientaddr.sin_addr), 100);
-			DisplayText(L"[TCP 서버] : Client 접속 \r\n IP 주소 : %S, 포트 번호 : %d\r\n",
-				inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port));
-			AddSocketInfo(client_sock);
-			if (WSAAsyncSelect(client_sock, hWnd, WM_SOCKET, FD_READ | FD_WRITE | FD_CLOSE) == SOCKET_ERROR)
+			DisplayText(L"1. 데이터 길이 받기 %d\r\n", g_strSize);
+		}
+		else if (g_recive != 0)
+		{
+			DisplayText(L"FD_READ g_str \r\n");
+			retval = recv(wParam, (char*)g_str, g_strSize, 0);
+			if (retval == SOCKET_ERROR)
 			{
-				err_display(L"WSAAsyncSelect(), client_sock");
-				RemoveSocketInfo(client_sock);
+				err_display(L"recv()");
+				return;
 			}
-			SockArr[SockCount++] = client_sock;
-			break;
-		case FD_READ:
-			DisplayText(L"FD_READ  \r\n");
-			ptr = GetSocketInfo(wParam);
-			//데이터 받기
-			if(recive == 0)
+			DisplayText(L"2. 데이터 내용 받기\r\n");
+			//받은 데이터 출력
+			g_str[retval] = '\0';
+			addrLen = sizeof(clientAddr);
+			getpeername(wParam, (SOCKADDR*)&clientAddr, &addrLen);
+			DisplayText(L"[TCP /%S : %d] %s\r\n",
+				inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), g_str);
+			g_recive = 0;
+			for (int i = 0; i < g_sockArraySize; i++)
 			{
-				recive = recv(ptr->sock, (char*)&re_size, sizeof(int), 0);
-				if (recive == SOCKET_ERROR)
-				{
-					err_display(L"recv()");
-					return;
-				}
-				DisplayText(L"1. 데이터 길이 받기 %d\r\n", re_size);
-			}
-			else if(recive != 0)
-			{
-				retval = recv(ptr->sock, (char*)ptr->buf, re_size, 0);
+				DisplayText(L"데이터보냄\r\n");
+				retval = send(g_sockArray[i], (char*)g_str, retval, 0);
 				if (retval == SOCKET_ERROR)
 				{
-					err_display(L"recv()");
+					err_display(L"send()");
 					return;
 				}
-				DisplayText(L"2. 데이터 내용 받기 %d\r\n");
-				//받은 데이터 출력
-				ptr->buf[retval] = '\0';		
-				addrlen = sizeof(clientaddr);
-				getpeername(wParam, (SOCKADDR*)&clientaddr, &addrlen);
-				DisplayText(L"[TCP /%S : %d] %s\r\n", 
-					inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port), ptr->buf);
-				recive = 0;
-				for (int i = 0; i<SockCount; i++)
-				{
-					DisplayText(L"데이터보냄\r\n");
-					retval = send(SockArr[i], (char*)ptr->buf, retval, 0);
-					if (retval == SOCKET_ERROR)
-					{
-						err_display(L"send()");
-						RemoveSocketInfo(wParam);
-						return;
-					}
-				}
 			}
-			break;
-		case FD_WRITE:
-			DisplayText(L"FD_WRITE 발생\r\n");
-			break;
-		case FD_CLOSE:
-			int i = 0;
-			while (1)
-			{
-				if (ptr->sock == SockArr[i])
-				{
-					SockArr[i] = NULL;
-					break;
-				}
-				else
-				{
-					i++;
-				}
-			}
-			RemoveSocketInfo(wParam);
-			break;
+		}
+		break;
+	case FD_WRITE:
+		DisplayText(L"FD_WRITE 발생\r\n");
+		break;
+	case FD_CLOSE:
+
+		break;
 	}
 }
-
 
 //
 //  함수: InitServer(HWND hWnd)
@@ -366,66 +331,9 @@ void InitServer(HWND hWnd)
 	//WSAAsyncSelect()
 	if (WSAAsyncSelect(listen_sock, hWnd, WM_SOCKET, FD_ACCEPT | FD_CLOSE) == SOCKET_ERROR) err_quit(L"WSAAsyncSelect()");
 
-	//cout << "Server Init Success!" << endl;
 	DisplayText(L"Server Success!\r\n");
 }
 
-BOOL AddSocketInfo(SOCKET sock)
-{
-	SOCKETINFO *ptr = new SOCKETINFO;
-	if (ptr == NULL) {
-		printf("[오류] 메모리가 부족합니다!\n");
-		return FALSE;
-	}
-
-	ptr->sock = sock;
-	ptr->recvbytes = 0;
-	ptr->sendbytes = 0;
-	ptr->recvdelayed = FALSE;
-	ptr->next = SocketInfoList;
-	SocketInfoList = ptr;
-
-	return TRUE;
-}
-
-SOCKETINFO * GetSocketInfo(SOCKET sock)
-{
-	SOCKETINFO *ptr = SocketInfoList;
-
-	while (ptr) {
-		if (ptr->sock == sock)
-			return ptr;
-		ptr = ptr->next;
-	}
-
-	return NULL;
-}
-
-void RemoveSocketInfo(SOCKET sock)
-{
-	SOCKADDR_IN clientaddr;
-	int addrlen = sizeof(clientaddr);
-	getpeername(sock, (SOCKADDR *)&clientaddr, &addrlen);
-	printf("[TCP 서버] 클라이언트 종료: IP 주소=%s, 포트 번호=%d\n",
-		inet_ntoa(clientaddr.sin_addr), ntohs(clientaddr.sin_port));
-
-	SOCKETINFO *curr = SocketInfoList;
-	SOCKETINFO *prev = NULL;
-
-	while (curr) {
-		if (curr->sock == sock) {
-			if (prev)
-				prev->next = curr->next;
-			else
-				SocketInfoList = curr->next;
-			closesocket(curr->sock);
-			delete curr;
-			return;
-		}
-		prev = curr;
-		curr = curr->next;
-	}
-}
 
 void DisplayText(LPWSTR fmt, ...)
 {
@@ -479,56 +387,3 @@ void err_display(int errcode)
 	LocalFree(lpMsgBuf);
 }
 
-char * ConvertWCtoC(wchar_t* str)
-
-{
-
-	//반환할 char* 변수 선언
-
-	char* pStr;
-
-
-
-	//입력받은 wchar_t 변수의 길이를 구함
-
-	int strSize = WideCharToMultiByte(CP_ACP, 0, str, -1, NULL, 0, NULL, NULL);
-
-	//char* 메모리 할당
-
-	pStr = new char[strSize];
-
-
-
-	//형 변환 
-
-	WideCharToMultiByte(CP_ACP, 0, str, -1, pStr, strSize, 0, 0);
-
-	return pStr;
-
-
-}
-
-
-wchar_t* ConverCtoWC(char* str)
-
-{
-
-	//wchar_t형 변수 선언
-
-	wchar_t* pStr;
-
-	//멀티 바이트 크기 계산 길이 반환
-
-	int strSize = MultiByteToWideChar(CP_ACP, 0, str, -1, NULL, NULL);
-
-	//wchar_t 메모리 할당
-
-	pStr = new WCHAR[strSize];
-
-	//형 변환
-
-	MultiByteToWideChar(CP_ACP, 0, str, strlen(str) + 1, pStr, strSize);
-
-	return pStr;
-
-}
