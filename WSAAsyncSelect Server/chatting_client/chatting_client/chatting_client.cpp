@@ -42,7 +42,7 @@ INT_PTR CALLBACK    About(HWND, UINT, WPARAM, LPARAM);
 void				ProcessSocketMessage(HWND, UINT, WPARAM, LPARAM);
 ////////////////소켓  함수////////////////////
 void InitClientServer(HWND hWnd);
-void SendFixedSize(SOCKET sock);
+void SendChatStr(SOCKET sock);
 //////////////error 출력 함수/////////////////
 void DisplayText(LPWSTR fmt, ...);
 void err_quit(LPWSTR msg);
@@ -208,7 +208,7 @@ LRESULT CALLBACK WndProc(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 					430, 385, 50, 50, hWnd, (HMENU)ID_CHAT_SEND_BUTTON, hInst, NULL);
 				break;
 				case ID_CHAT_SEND_BUTTON:
-					SendFixedSize(g_serverSock);
+					SendChatStr(g_serverSock);
 					break;
 				case IDM_ABOUT:
 					DialogBox(hInst, MAKEINTRESOURCE(IDD_ABOUTBOX), hWnd, About);
@@ -280,9 +280,10 @@ INT_PTR CALLBACK About(HWND hDlg, UINT message, WPARAM wParam, LPARAM lParam)
 // lParam : 하위 16비트 -> 발생한 이벤트 상위 16비트 -> 오류코드
 void ProcessSocketMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 {
-	SOCKET clientSock;
+	SOCKET serverSock = wParam;
 	SOCKADDR_IN clientAddr;
 	int addrLen, retval;
+	Packet header;
 	if (WSAGETSELECTERROR(lParam))
 	{
 		err_display(WSAGETSELECTERROR(lParam));
@@ -293,24 +294,39 @@ void ProcessSocketMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	{
 	case FD_CONNECT:
 		DisplayText(L"Connect 성공!");
-		if (WSAAsyncSelect(wParam, hWnd, WM_SOCKET, FD_READ | FD_WRITE | FD_CLOSE) == SOCKET_ERROR)
+		if (WSAAsyncSelect(serverSock, hWnd, WM_SOCKET, FD_READ | FD_WRITE | FD_CLOSE) == SOCKET_ERROR)
 		{
 			err_display(L"WSAAsyncSelect(), FD_CONNECT");
 		}
-		g_serverSock = wParam;
+		g_serverSock = serverSock;
 		break;
 	case FD_READ:
-		retval = recv(wParam, (char*)g_str, BUFSIZE, 0);
+		//데이터 받기
+
+		DisplayText(L"FD_READ g_strSize ");
+		retval = recv(wParam, (char*)&header, sizeof(Packet), 0);
 		if (retval == SOCKET_ERROR)
 		{
-			err_display(L"recv()");
+			err_display(L"Packet recv()");
 			return;
 		}
-		addrLen = sizeof(clientAddr);
-		getpeername(wParam, (SOCKADDR*)&clientAddr, &addrLen);
-		DisplayText(L"[TCP /%S : %d] %s",
-			inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), g_str);
-		break;
+		switch (header.header)
+		{
+		case CHAT_STR_DATA:
+			StrData strData;
+			retval = recv(wParam, (char*)&strData, sizeof(StrData), 0);
+			if (retval == SOCKET_ERROR)
+			{
+				err_display(L"StrData recv()");
+				return;
+			}
+			addrLen = sizeof(clientAddr);
+			getpeername(wParam, (SOCKADDR*)&clientAddr, &addrLen);
+			DisplayText(L"[TCP /%S : %d] %s",
+				inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), strData.str);	
+			break;
+		}
+		
 	case FD_WRITE:
 		DisplayText(L"FD_WRITE 발생");
 		break;
@@ -337,21 +353,16 @@ void InitClientServer(HWND hWnd)
 	DisplayText(L"서버 연결중...!");
 }
 
-void SendFixedSize(SOCKET sock)
+void SendChatStr(SOCKET sock)
 {
 	int retval;
-	int strSize;
-	
-	GetWindowText(hChatWriteEdit, g_str, BUFSIZE);
-	strSize = (lstrlen(g_str) + 1) * sizeof(WCHAR);
-	DisplayText(L"%d", strSize);
-	retval = send(sock, (char*)&strSize, sizeof(int), 0);
-	if (retval == SOCKET_ERROR)
-	{
-		err_display(L"send()");
-		return;
-	}
-	retval = send(sock, (char*)g_str, strSize, 0);
+	ChatStrData chat;
+	GetWindowText(hChatWriteEdit, chat.chatData.str, BUFSIZE);
+	chat.chatData.strSize = lstrlen(chat.chatData.str);
+	DisplayText(L"chat size : %d", sizeof(ChatStrData));
+	DisplayText(L"chat str_size : %d", chat.chatData.strSize);
+
+	retval = send(sock, (char*)&chat, sizeof(ChatStrData), 0);
 	if (retval == SOCKET_ERROR)
 	{
 		err_display(L"send()");
@@ -359,6 +370,27 @@ void SendFixedSize(SOCKET sock)
 	}
 
 }
+//void SendFixedSize(SOCKET sock)
+//{
+//	int retval;
+//	int strSize;
+//	GetWindowText(hChatWriteEdit, g_str, BUFSIZE);
+//	strSize = (lstrlen(g_str) + 1) * sizeof(WCHAR);
+//	DisplayText(L"%d", strSize);
+//	retval = send(sock, (char*)&strSize, sizeof(int), 0);
+//	if (retval == SOCKET_ERROR)
+//	{
+//		err_display(L"send()");
+//		return;
+//	}
+//	retval = send(sock, (char*)g_str, strSize, 0);
+//	if (retval == SOCKET_ERROR)
+//	{
+//		err_display(L"send()");
+//		return;
+//	}
+//
+//}
 void DisplayText(LPWSTR fmt, ...)
 {
 	va_list arg;

@@ -10,24 +10,35 @@ enum Protocal
 {
 	LOGIN_RQ = 300,
 	LOGIN_RP,
-	CHAT_RQ,
-	CHAT_RP
+	CHAT_STR_DATA
 };
-
+//8byte
 typedef struct Packet
 {
 	int header;
-	int size;
+	int DataSize;
 };
 
-typedef struct LOGIN
+typedef struct Login
 {
 	Packet loginHeader;
 };
 
-typedef struct CHAT
+typedef struct StrData
+{
+	WCHAR str[50];
+	int strSize;
+};
+
+typedef struct ChatStrData
 {
 	Packet chatHeader;
-	WCHAR str[10];
-
+	StrData chatData;
+	ChatStrData()
+	{
+		chatHeader.header = CHAT_STR_DATA;
+		chatHeader.DataSize = sizeof(StrData);
+		memset(chatData.str, 0, sizeof(chatData.str));
+		chatData.strSize = 0;
+	}
 };

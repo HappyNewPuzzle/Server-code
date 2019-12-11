@@ -225,8 +225,9 @@ void ProcessSocketMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	SOCKET clientSock;
 	SOCKADDR_IN clientAddr;
 	int addrLen, retval;
-
-
+	ChatStrData chat;
+	Packet header;
+	WCHAR Data[100];
 	if (WSAGETSELECTERROR(lParam))
 	{
 		err_display(WSAGETSELECTERROR(lParam));
@@ -236,63 +237,104 @@ void ProcessSocketMessage(HWND hWnd, UINT message, WPARAM wParam, LPARAM lParam)
 	switch (WSAGETSELECTEVENT(lParam))
 	{
 	case FD_ACCEPT:
-		addrLen = sizeof(clientAddr);
-		clientSock = accept(wParam, (SOCKADDR*)&clientAddr, &addrLen);
-		if (clientSock == INVALID_SOCKET)
-		{
-			err_display(L"accpt()");
-			return;
-		}
-		DisplayText(L"[TCP 서버] : Client 접속 \r\n IP 주소 : %S, 포트 번호 : %d\r\n",
-			inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
-		if (WSAAsyncSelect(clientSock, hWnd, WM_SOCKET, FD_READ | FD_WRITE | FD_CLOSE) == SOCKET_ERROR)
-		{
-			err_display(L"WSAAsyncSelect(), clientSock");
-		}
-		g_sockArray[g_sockArraySize++] = clientSock;
+	{
+			addrLen = sizeof(clientAddr);
+			clientSock = accept(wParam, (SOCKADDR*)&clientAddr, &addrLen);
+			if (clientSock == INVALID_SOCKET)
+			{
+				err_display(L"accpt()");
+				return;
+			}
+			DisplayText(L"[TCP 서버] : Client 접속 \r\n IP 주소 : %S, 포트 번호 : %d\r\n",
+				inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port));
+			if (WSAAsyncSelect(clientSock, hWnd, WM_SOCKET, FD_READ | FD_WRITE | FD_CLOSE) == SOCKET_ERROR)
+			{
+				err_display(L"WSAAsyncSelect(), clientSock");
+			}
+			g_sockArray[g_sockArraySize++] = clientSock;
 		break;
+	}
 	case FD_READ:
 		//데이터 받기
-		if (g_recive == 0)
-		{
+		
 			DisplayText(L"FD_READ g_strSize \r\n");
-			g_recive = recv(wParam, (char*)&g_strSize, sizeof(int), 0);
-			if (g_recive == SOCKET_ERROR)
-			{
-				err_display(L"recv()");
-				return;
-			}
-			DisplayText(L"1. 데이터 길이 받기 %d\r\n", g_strSize);
-		}
-		else if (g_recive != 0)
-		{
-			DisplayText(L"FD_READ g_str \r\n");
-			retval = recv(wParam, (char*)g_str, g_strSize, 0);
+			retval = recv(wParam, (char*)&header, sizeof(Packet), 0);
 			if (retval == SOCKET_ERROR)
 			{
-				err_display(L"recv()");
+				err_display(L"Packet recv()");
 				return;
 			}
-			DisplayText(L"2. 데이터 내용 받기\r\n");
-			//받은 데이터 출력
-			g_str[retval] = '\0';
-			addrLen = sizeof(clientAddr);
-			getpeername(wParam, (SOCKADDR*)&clientAddr, &addrLen);
-			DisplayText(L"[TCP /%S : %d] %s\r\n",
-				inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), g_str);
-			g_recive = 0;
-			for (int i = 0; i < g_sockArraySize; i++)
+			switch (header.header)
 			{
-				DisplayText(L"데이터보냄\r\n");
-				retval = send(g_sockArray[i], (char*)g_str, retval, 0);
-				if (retval == SOCKET_ERROR)
-				{
-					err_display(L"send()");
-					return;
-				}
+				case CHAT_STR_DATA:
+					StrData strData;
+					retval = recv(wParam, (char*)&strData, sizeof(StrData), 0);
+					if (retval == SOCKET_ERROR)
+					{
+						err_display(L"StrData recv()");
+						return;
+					}
+					DisplayText(L"1. %s\r\n", strData.str);
+					DisplayText(L"2. %d\r\n", strData.strSize);
+					addrLen = sizeof(clientAddr);
+					getpeername(wParam, (SOCKADDR*)&clientAddr, &addrLen);
+					DisplayText(L"[TCP /%S : %d] %s\r\n",
+						inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), strData.str);
+					ChatStrData chat;
+					chat.chatData = strData;
+					for (int i = 0; i < g_sockArraySize; i++)
+					{
+						DisplayText(L"데이터보냄\r\n");
+						retval = send(g_sockArray[i], (char*)&chat, sizeof(ChatStrData), 0);
+						if (retval == SOCKET_ERROR)
+						{
+							err_display(L"ChatStrData send()");
+							return;
+						}
+					}
+					break;
 			}
-		}
-		break;
+		////데이터 받기
+		//if (g_recive == 0)
+		//{
+		//	DisplayText(L"FD_READ g_strSize \r\n");
+		//	g_recive = recv(wParam, (char*)&g_strSize, sizeof(int), 0);
+		//	if (g_recive == SOCKET_ERROR)
+		//	{
+		//		err_display(L"recv()");
+		//		return;
+		//	}
+		//	DisplayText(L"1. 데이터 길이 받기 %d\r\n", g_strSize);
+		//}
+		//else if (g_recive != 0)
+		//{
+		//	DisplayText(L"FD_READ g_str \r\n");
+		//	retval = recv(wParam, (char*)g_str, g_strSize, 0);
+		//	if (retval == SOCKET_ERROR)
+		//	{
+		//		err_display(L"recv()");
+		//		return;
+		//	}
+		//	DisplayText(L"2. 데이터 내용 받기\r\n");
+		//	//받은 데이터 출력
+		//	g_str[retval] = '\0';
+		//	addrLen = sizeof(clientAddr);
+		//	getpeername(wParam, (SOCKADDR*)&clientAddr, &addrLen);
+		//	DisplayText(L"[TCP /%S : %d] %s\r\n",
+		//		inet_ntoa(clientAddr.sin_addr), ntohs(clientAddr.sin_port), g_str);
+		//	g_recive = 0;
+		//	for (int i = 0; i < g_sockArraySize; i++)
+		//	{
+		//		DisplayText(L"데이터보냄\r\n");
+		//		retval = send(g_sockArray[i], (char*)g_str, retval, 0);
+		//		if (retval == SOCKET_ERROR)
+		//		{
+		//			err_display(L"send()");
+		//			return;
+		//		}
+		//	}
+		//}
+		//break;
 	case FD_WRITE:
 		DisplayText(L"FD_WRITE 발생\r\n");
 		break;
